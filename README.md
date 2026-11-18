@@ -1,3 +1,5 @@
+> **Verified NAS fork:** optional SMB copy with full SHA-256 read-back, independent verification receipts and calendar retention. See [Verified NAS setup and recovery](docs/verified-nas.md). Based on jcwillox/hass-auto-backup; original attribution and MIT licence retained.
+
 # 🗃️ Auto Backup
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
