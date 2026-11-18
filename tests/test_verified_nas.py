@@ -254,6 +254,19 @@ class VerifiedNAS(unittest.TestCase):
         )
         self.assertEqual(result["checked"], [receipt["name"]])
 
+    def test_new_verified_copy_replaces_same_calendar_day_without_duplicates(self):
+        first = self.upload()
+        later = NOW + timedelta(minutes=1)
+        second = backend.transfer(
+            CONFIG, NS, "76543210", later, lambda: Response(), self.factory
+        )
+        result = backend.purge(
+            CONFIG, NS, {r["name"]: r for r in (first, second)}, later, self.factory
+        )
+        self.assertEqual(result["remaining"], [second["name"]])
+        self.assertNotIn("ha/" + first["name"] + ".sha256", self.smb.files)
+        self.assertIn("ha/" + second["name"] + ".sha256", self.smb.files)
+
     def test_legacy_ignored_unless_explicitly_enabled(self):
         self.smb.put("ha/Samba_Backup_2026_11_18_09_53.tar", b"archive")
         self.assertEqual(backend.scan(CONFIG, NS, NOW, self.factory)["copies"], 0)
