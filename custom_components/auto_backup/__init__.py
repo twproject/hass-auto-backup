@@ -111,7 +111,9 @@ MAP_SERVICES = {
     SERVICE_BACKUP_PARTIAL: SCHEMA_BACKUP_PARTIAL,
     SERVICE_PURGE: None,
     SERVICE_CHECK_NAS: vol.Schema({}),
-    SERVICE_VERIFY_NAS: vol.Schema({vol.Optional("adopt_legacy", default=False): cv.boolean}),
+    SERVICE_VERIFY_NAS: vol.Schema(
+        {vol.Optional("adopt_legacy", default=False): cv.boolean}
+    ),
 }
 
 
@@ -177,8 +179,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await auto_backup.async_create_backup(data)
 
     for service, schema in MAP_SERVICES.items():
-        hass.services.async_register(DOMAIN, service, async_service_handler, schema,
-            supports_response=SupportsResponse.OPTIONAL if service in (SERVICE_CHECK_NAS, SERVICE_VERIFY_NAS) else SupportsResponse.NONE)
+        hass.services.async_register(
+            DOMAIN,
+            service,
+            async_service_handler,
+            schema,
+            supports_response=(
+                SupportsResponse.OPTIONAL
+                if service in (SERVICE_CHECK_NAS, SERVICE_VERIFY_NAS)
+                else SupportsResponse.NONE
+            ),
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

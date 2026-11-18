@@ -56,7 +56,9 @@ class AutoBackupBaseSensor(SensorEntity):
 
 
 class AutoBackupNasSensor(AutoBackupBaseSensor):
-    entity_description = SensorEntityDescription(key="nas-status",name="NAS backup",icon="mdi:backup-restore")
+    entity_description = SensorEntityDescription(
+        key="nas-status", name="NAS backup", icon="mdi:backup-restore"
+    )
     _attr_should_poll = False
 
     @property
@@ -65,14 +67,16 @@ class AutoBackupNasSensor(AutoBackupBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return {k:v for k,v in self._auto_backup.nas_status.items() if k!="status"}
+        return {k: v for k, v in self._auto_backup.nas_status.items() if k != "status"}
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+
         @callback
         def update(_):
             self.async_write_ha_state()
-        self.async_on_remove(self.hass.bus.async_listen(EVENT_NAS_UPDATED,update))
+
+        self.async_on_remove(self.hass.bus.async_listen(EVENT_NAS_UPDATED, update))
 
 
 class AutoBackupSensor(AutoBackupBaseSensor):

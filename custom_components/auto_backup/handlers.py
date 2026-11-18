@@ -129,7 +129,9 @@ class SupervisorHandler(HandlerBase):
     async def get_addons(self) -> List[Dict]:
         result = await self._get_addons_repositories()
         return [
-            addon for addon in result.get("addons", result.get("apps", [])) if addon.get("installed", True)
+            addon
+            for addon in result.get("addons", result.get("apps", []))
+            if addon.get("installed", True)
         ]
 
     @api_data
@@ -144,7 +146,12 @@ class SupervisorHandler(HandlerBase):
         """Open original bytes for a worker-thread upload; never call on the loop."""
         if not re.fullmatch(r"[a-f0-9]{8}", slug):
             raise HassioAPIError("Invalid backup identifier")
-        return urlopen(Request(f"http://{self._ip}/backups/{slug}/download", headers=self._headers), timeout=60)
+        return urlopen(
+            Request(
+                f"http://{self._ip}/backups/{slug}/download", headers=self._headers
+            ),
+            timeout=60,
+        )
 
     @api_data
     def create_backup(

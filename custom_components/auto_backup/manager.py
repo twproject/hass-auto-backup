@@ -250,7 +250,9 @@ class AutoBackup:
         download_paths: Optional[List[str]] = data.pop(ATTR_DOWNLOAD_PATH, None)
         nas_enabled = getattr(self, "_nas", None) and self._nas.enabled
         if nas_enabled and download_paths:
-            raise HomeAssistantError("Use verified NAS options instead of download_path in NAS mode")
+            raise HomeAssistantError(
+                "Use verified NAS options instead of download_path in NAS mode"
+            )
         started_at = dt_util.now()
 
         # handle exclude database
@@ -306,7 +308,16 @@ class AutoBackup:
             slug = result["slug"]
             name = result.get(ATTR_NAME, data[ATTR_NAME])
 
-            _LOGGER.info("%s: '%s' (%s)", "Local backup created; NAS verification pending" if nas_enabled else "Backup created successfully", name, slug)
+            _LOGGER.info(
+                "%s: '%s' (%s)",
+                (
+                    "Local backup created; NAS verification pending"
+                    if nas_enabled
+                    else "Backup created successfully"
+                ),
+                name,
+                slug,
+            )
 
             if nas_enabled:
                 await self._nas.copy(slug, started_at)
@@ -326,15 +337,23 @@ class AutoBackup:
 
             self._state -= 1
             self._hass.bus.async_fire(
-                EVENT_BACKUP_SUCCESSFUL, {"name": name, "slug": slug,
-                    **({"nas_verified": True, "checksum": "sha256"} if nas_enabled else {})}
+                EVENT_BACKUP_SUCCESSFUL,
+                {
+                    "name": name,
+                    "slug": slug,
+                    **(
+                        {"nas_verified": True, "checksum": "sha256"}
+                        if nas_enabled
+                        else {}
+                    ),
+                },
             )
             return True
 
         except Exception as err:
             _LOGGER.error("Error during backup. %s", err)
-            if nas_enabled and self._nas.status.get('status') != 'error':
-                self._nas.failure('backup',err,notify=False)
+            if nas_enabled and self._nas.status.get("status") != "error":
+                self._nas.failure("backup", err, notify=False)
             self._state -= 1
             self._hass.bus.async_fire(
                 EVENT_BACKUP_FAILED,

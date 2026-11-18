@@ -55,11 +55,15 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Optional("nas_folder", default=""): str,
         vol.Optional("nas_username", default=""): str,
         vol.Optional("nas_workgroup", default="WORKGROUP"): str,
-        vol.Optional("nas_password", default=""): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
-        vol.Optional("nas_daily", default=7): vol.All(int,vol.Range(min=1,max=90)),
-        vol.Optional("nas_weekly", default=4): vol.All(int,vol.Range(min=1,max=52)),
-        vol.Optional("nas_monthly", default=2): vol.All(int,vol.Range(min=1,max=24)),
-        vol.Optional("nas_keep_local", default=1): vol.All(int,vol.Range(min=1,max=20)),
+        vol.Optional("nas_password", default=""): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+        vol.Optional("nas_daily", default=7): vol.All(int, vol.Range(min=1, max=90)),
+        vol.Optional("nas_weekly", default=4): vol.All(int, vol.Range(min=1, max=52)),
+        vol.Optional("nas_monthly", default=2): vol.All(int, vol.Range(min=1, max=24)),
+        vol.Optional("nas_keep_local", default=1): vol.All(
+            int, vol.Range(min=1, max=20)
+        ),
         vol.Optional("nas_manage_legacy", default=False): bool,
     }
 )
@@ -71,13 +75,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
         if user_input is not None:
             # Never send the saved password back as a suggested form value.
-            user_input["nas_password"] = user_input.get("nas_password") or self.config_entry.options.get("nas_password", "")
+            user_input["nas_password"] = user_input.get(
+                "nas_password"
+            ) or self.config_entry.options.get("nas_password", "")
             if user_input.get("nas_enabled"):
                 if not is_hassio(self.hass):
                     errors["base"] = "nas_requires_supervisor"
                 else:
-                    try: validate_config(config_from_options(user_input))
-                    except NasError: errors["base"] = "invalid_nas_config"
+                    try:
+                        validate_config(config_from_options(user_input))
+                    except NasError:
+                        errors["base"] = "invalid_nas_config"
             if not errors:
                 return self.async_create_entry(data=user_input)
 
@@ -86,8 +94,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_SCHEMA, suggested
-            ),
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, suggested),
             errors=errors,
         )
