@@ -12,6 +12,7 @@ on:
 
 jobs:
   deploy_docs:
+    if: github.repository == 'jcwillox/hass-auto-backup'
     name: "Deploy Docs"
     runs-on: ubuntu-latest
     concurrency: deploy-docs-${{ github.ref }}
