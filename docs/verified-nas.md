@@ -15,7 +15,11 @@ A matching checksum proves that stored bytes match the reference. It is not a fu
 
 ## Configuration
 
-Install the custom_components/auto_backup directory, restart Home Assistant, then add Auto Backup under Devices & services. Open its options and enable verified NAS copies. Supply the NAS address, SMB share, relative folder, username, password and workgroup. The destination folder must already exist. A blank password preserves an existing password.
+In HACS, add `https://github.com/twproject/hass-auto-backup` as a custom **Integration** repository and download its `main` branch. Alternatively, copy the `custom_components/auto_backup` directory manually. Restart Home Assistant, then add Auto Backup under Devices & services. This fork uses the same integration domain as the original; keep one installed implementation.
+
+Open its options and enable verified NAS copies. Supply the NAS address, SMB share, relative folder, username, password and workgroup. The destination folder must already exist; leave the relative folder blank to use the share root. A blank password preserves an existing password.
+
+For a NAS with a network recycle bin, use a dedicated backup share with that bin disabled if retention should immediately reclaim space. SMB deletion normally follows the NAS recycle policy; this integration does not bypass it or empty a shared recycle bin. NAS snapshots and off-site retention can also retain old data independently.
 
 Defaults: 7 daily dates, 4 Sundays, 2 monthly copies (the first available Sunday in each month), and 1 verified local copy. A single archive can satisfy several rules and is never duplicated for this reason. The latest archive for each calendar date wins. Missing historical backups cannot be recreated; coverage grows over time. Names use the Home Assistant timezone.
 
