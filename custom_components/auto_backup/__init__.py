@@ -54,6 +54,8 @@ from .const import (
 from .handlers import SupervisorHandler, BackupHandler
 from .helpers import is_backup
 from .manager import AutoBackup
+from .control import BackupControl
+from .control_panel import setup_panel, remove_panel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,6 +149,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await auto_backup.load_snapshots_expiry()
     entry.async_on_unload(auto_backup._nas.stop)
+    auto_backup._control = BackupControl(hass, entry, auto_backup)
+    await auto_backup._control.load()
+    await setup_panel(hass)
 
     ### REGISTER SERVICES ###
     async def async_service_handler(call: ServiceCall):
@@ -197,6 +202,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
+    manager = hass.data.get(DATA_AUTO_BACKUP)
+    if manager and getattr(manager, "_control", None):
+        await manager._control.stop()
+    remove_panel(hass)
     for service in MAP_SERVICES.keys():
         hass.services.async_remove(DOMAIN, service)
 

@@ -1,13 +1,27 @@
 {
   "domain": "auto_backup",
   "name": "Auto Backup (Verified NAS)",
-  "after_dependencies": ["default_config", "backup", "hassio"],
-  "codeowners": ["@twproject", "@jcwillox"],
+  "after_dependencies": [
+    "default_config",
+    "backup",
+    "hassio"
+  ],
+  "codeowners": [
+    "@twproject",
+    "@jcwillox"
+  ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api",
+    "panel_custom"
+  ],
   "documentation": "https://github.com/twproject/hass-auto-backup",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/twproject/hass-auto-backup/issues",
-  "requirements": ["pysmb==1.2.15"],
-  "version": "1.10.0"
+  "requirements": [
+    "pysmb==1.2.15"
+  ],
+  "version": "1.11.0-beta.3"
 }

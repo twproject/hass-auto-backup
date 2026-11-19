@@ -199,6 +199,7 @@ def scan(config, namespace, now, factory=None):
                 "weekly": 0,
                 "monthly": 0,
                 "missing_checksums": 0,
+                "catalog": [],
             }
         latest = datetime.fromisoformat(plan["latest_timestamp"]).replace(
             tzinfo=now.tzinfo
@@ -207,7 +208,7 @@ def scan(config, namespace, now, factory=None):
         if age < 0:
             raise NasError("Backup timestamp is in the future")
         return {
-            "status": "ok" if age <= 26 else "stale",
+            "status": "ok" if age <= config.get("stale_hours", 26) else "stale",
             "copies": len(archives),
             "daily": len(plan["daily"]),
             "weekly": len(plan["weekly"]),
@@ -216,6 +217,16 @@ def scan(config, namespace, now, factory=None):
             "age_hours": round(age, 2),
             "missing_checksums": sum(a.name + ".sha256" not in names for a in archives),
             "plan": plan,
+            "catalog": [
+                {
+                    "name": a.name,
+                    "bytes": a.size,
+                    "created_at": a.timestamp.replace(tzinfo=now.tzinfo).isoformat(),
+                    "roles": plan["roles"].get(a.name, []),
+                    "has_checksum": a.name + ".sha256" in names,
+                }
+                for a in archives
+            ],
         }
 
 

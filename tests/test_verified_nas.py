@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import os
 import io
 from pathlib import Path
 import sys
@@ -13,7 +14,12 @@ from types import SimpleNamespace
 # Load the independent backend without importing Home Assistant's integration.
 PACKAGE = "verified_nas_test_package"
 package = types.ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).parents[1] / "custom_components/auto_backup")]
+package.__path__ = [
+    os.environ.get(
+        "AUTO_BACKUP_SOURCE",
+        str(Path(__file__).parents[1] / "custom_components/auto_backup"),
+    )
+]
 sys.modules[PACKAGE] = package
 backend = importlib.import_module(PACKAGE + ".nas_backend")
 policy = importlib.import_module(PACKAGE + ".nas_policy")

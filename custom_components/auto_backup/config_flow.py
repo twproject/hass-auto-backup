@@ -87,7 +87,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     except NasError:
                         errors["base"] = "invalid_nas_config"
             if not errors:
-                return self.async_create_entry(data=user_input)
+                return self.async_create_entry(
+                    data={**self.config_entry.options, **user_input}
+                )
 
         suggested = dict(user_input or self.config_entry.options)
         suggested.pop("nas_password", None)

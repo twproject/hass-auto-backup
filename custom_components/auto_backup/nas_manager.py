@@ -1,6 +1,8 @@
 """HA lifecycle, receipts and notifications for verified NAS backups."""
 
 import asyncio
+import hashlib
+import json
 from datetime import datetime, timedelta
 import logging
 import re
@@ -32,6 +34,7 @@ def config_from_options(options):
         "monthly": options.get("nas_monthly", 2),
         "keep_local": options.get("nas_keep_local", 1),
         "manage_legacy": options.get("nas_manage_legacy", False),
+        "stale_hours": options.get("policy", {}).get("stale_hours", 26),
     }
 
 
@@ -42,6 +45,8 @@ class NasBackupManager:
         self.store = Store(hass, 1, "auto_backup.nas_verification")
         self.namespace = None
         self.receipts = {}
+        self.destinations = {}
+        self.catalog = None
         self.status = {"status": "disabled" if not self.enabled else "waiting"}
         self.lock = asyncio.Lock()
         self.cancels = []
@@ -50,22 +55,41 @@ class NasBackupManager:
     def enabled(self):
         return self.config["enabled"]
 
+    @property
+    def destination(self):
+        return hashlib.sha256(
+            json.dumps(
+                [self.config.get(k, "") for k in ("server", "share", "folder")]
+            ).encode()
+        ).hexdigest()
+
     async def load(self):
         saved = await self.store.async_load() or {}
         self.namespace = saved.get("namespace") or uuid.uuid4().hex[:12]
         self.receipts = saved.get("receipts", {})
         self.status.update(saved.get("status", {}))
+        self.destinations = saved.get("destinations", {})
+        if saved.get("destination") and saved["destination"] != self.destination:
+            current = self.destinations.get(self.destination, {})
+            self.receipts = current.get("receipts", {})
+            self.status = current.get("status", {"status": "waiting"})
         if not self.enabled:
             self.status["status"] = "disabled"
         await self.save()
         self.start()
 
     async def save(self):
+        self.destinations[self.destination] = {
+            "receipts": self.receipts,
+            "status": dict(self.status),
+        }
         await self.store.async_save(
             {
                 "namespace": self.namespace,
                 "receipts": self.receipts,
                 "status": self.status,
+                "destination": self.destination,
+                "destinations": self.destinations,
             }
         )
 
@@ -112,11 +136,22 @@ class NasBackupManager:
         )
 
     async def update_options(self, options):
+        old_destination = self.destination
+        self.destinations[old_destination] = {
+            "receipts": self.receipts,
+            "status": dict(self.status),
+        }
         self.config = config_from_options(options)
+        if self.destination != old_destination:
+            current = self.destinations.get(self.destination, {})
+            self.receipts = current.get("receipts", {})
+            self.status = dict(current.get("status", {}))
+            self.catalog = None
         if self.enabled:
             nas_backend.validate_config(self.config)
         self.publish(status="waiting" if self.enabled else "disabled")
         self.start()
+        await self.save()
 
     async def _scheduled_check(self, _):
         if self.lock.locked():
@@ -136,10 +171,11 @@ class NasBackupManager:
                 result = await self.hass.async_add_executor_job(
                     nas_backend.scan, dict(self.config), self.namespace, dt_util.now()
                 )
+                self.catalog = result.get("catalog", [])
                 if self.status.get("last_error_stage") == "check":
                     self.status.update(last_error=None, last_error_stage=None)
                 self.publish(
-                    **{k: v for k, v in result.items() if k != "plan"},
+                    **{k: v for k, v in result.items() if k not in ("plan", "catalog")},
                     checked_at=dt_util.now().isoformat(),
                 )
                 await self.save()
