@@ -1,4 +1,4 @@
-> **Control panel preview:** configure schedules, content, NAS retention, integrity checks and notifications from an admin-only Home Assistant sidebar panel. No generated automation YAML. Internal scheduling is off by default. See [Control panel](docs/control-panel.md).
+> **Control panel (1.11.0):** configure schedules, content, NAS retention, integrity checks and notifications from an admin-only Home Assistant sidebar panel. No generated automation YAML. Internal scheduling is off by default. See [Control panel](docs/control-panel.md).
 
 > **Verified NAS fork:** optional SMB copy with full SHA-256 read-back, independent verification receipts and calendar retention. See [Verified NAS setup and recovery](docs/verified-nas.md). Based on jcwillox/hass-auto-backup; original attribution and MIT licence retained.
 
