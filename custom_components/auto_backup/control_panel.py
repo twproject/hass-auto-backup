@@ -145,7 +145,7 @@ async def command(hass, connection, msg):
                 local = {item["slug"] for item in await manager._handler.get_backups()}
                 for item in result["copies"]:
                     item["local_present"] = item.get("slug") in local
-            except (HomeAssistantError, RuntimeError):
+            except (HomeAssistantError, RuntimeError) as _error:
                 pass
         result["notify_targets"] = [
             {"entity_id": s.entity_id, "name": s.name}
@@ -157,7 +157,7 @@ async def command(hass, connection, msg):
                     {"slug": a["slug"], "name": a["name"]}
                     for a in await manager._handler.get_addons()
                 ]
-            except (HomeAssistantError, RuntimeError, NotImplementedError):
+            except (HomeAssistantError, RuntimeError, NotImplementedError) as _error:
                 result["addons"] = []
         connection.send_result(msg["id"], result)
     except (ValueError, HomeAssistantError, nas_backend.NasError) as error:
