@@ -1,4 +1,4 @@
-import {languageOf,translate,escapeHtml as esc} from "./translations.js?v=1.11.0-beta.3";
+import {languageOf,translate,escapeHtml as esc} from "./translations.js?v=1.11.0";
 
 const DAY_KEYS=["monday","tuesday","wednesday","thursday","friday","saturday","sundayDay"];
 const ROLES={daily:"daily",weekly:"weekly",monthly:"monthly"};

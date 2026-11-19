@@ -184,7 +184,7 @@ async def setup_panel(hass):
         webcomponent_name="auto-backup-panel",
         sidebar_title="Auto Backup",
         sidebar_icon="mdi:backup-restore",
-        module_url="/auto_backup_static/panel.js?v=1.11.0-beta.3",
+        module_url="/auto_backup_static/panel.js?v=1.11.0",
         require_admin=True,
         config_panel_domain=DOMAIN,
     )

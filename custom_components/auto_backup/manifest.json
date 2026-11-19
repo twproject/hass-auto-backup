@@ -23,5 +23,5 @@
   "requirements": [
     "pysmb==1.2.15"
   ],
-  "version": "1.11.0-beta.3"
+  "version": "1.11.0"
 }

@@ -149,6 +149,31 @@ class BackupControl:
             await self.save()
             self.launch(kind, "schedule", key)
             return
+        health = self.manager.nas_status.get("status")
+        problems = {
+            "error",
+            "unknown",
+            "unavailable",
+            "disabled",
+            "missing_checksums",
+            "empty",
+        }
+        if self.policy["notify_errors"] and health in problems:
+            since = self.alerts.get("nas_problem_since")
+            if since is None:
+                self.alerts["nas_problem_since"] = now.isoformat()
+                await self.save()
+            else:
+                elapsed = (now - dt_util.parse_datetime(since)).total_seconds()
+                if elapsed >= (300 if health == "empty" else 900):
+                    await self.alert_once(
+                        "nas_problem:" + now.date().isoformat(),
+                        "NAS backup monitoring reports a persistent problem ("
+                        + health
+                        + "). Check Auto Backup.",
+                    )
+        elif self.alerts.pop("nas_problem_since", None) is not None:
+            await self.save()
         last = self.manager.nas_status.get("last_verified")
         stamp = dt_util.parse_datetime(last) if last else None
         if self.policy["notify_errors"] and (

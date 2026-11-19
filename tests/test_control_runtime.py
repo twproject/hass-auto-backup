@@ -75,6 +75,60 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[:2], ["saved", "launched"])
         self.assertEqual(events.count("launched"), 1)
 
+    async def test_periodic_nas_error_notifies_even_with_recent_backup(self):
+        ctl = self.controller({"policy": {"enabled": True, "backup_time": "23:59"}})
+        ctl.manager.nas_status = {
+            "status": "error",
+            "last_verified": "2026-11-19T10:00:00+00:00",
+        }
+        with patch(
+            "custom_components.auto_backup.control.dt_util.now",
+            return_value=datetime(2026, 11, 19, 10, tzinfo=timezone.utc),
+        ):
+            await ctl.tick(None)
+        ctl.hass.services.async_call.assert_not_awaited()
+        with patch(
+            "custom_components.auto_backup.control.dt_util.now",
+            return_value=datetime(2026, 11, 19, 10, 16, tzinfo=timezone.utc),
+        ):
+            await ctl.tick(None)
+            await ctl.tick(None)
+        self.assertEqual(ctl.hass.services.async_call.await_count, 1)
+
+    async def test_nas_recovery_resets_pending_alert(self):
+        ctl = self.controller({"policy": {"enabled": True, "backup_time": "23:59"}})
+        ctl.alerts["nas_problem_since"] = "2026-11-19T10:00:00+00:00"
+        ctl.manager.nas_status = {
+            "status": "ok",
+            "last_verified": "2026-11-19T10:00:00+00:00",
+        }
+        with patch(
+            "custom_components.auto_backup.control.dt_util.now",
+            return_value=datetime(2026, 11, 19, 10, 16, tzinfo=timezone.utc),
+        ):
+            await ctl.tick(None)
+        self.assertNotIn("nas_problem_since", ctl.alerts)
+        ctl.hass.services.async_call.assert_not_awaited()
+
+    async def test_disabled_error_notifications_do_not_report_nas_problem(self):
+        ctl = self.controller(
+            {
+                "policy": {
+                    "enabled": True,
+                    "notify_errors": False,
+                    "backup_time": "23:59",
+                }
+            }
+        )
+        ctl.alerts["nas_problem_since"] = "2026-11-19T10:00:00+00:00"
+        ctl.manager.nas_status = {"status": "error"}
+        with patch(
+            "custom_components.auto_backup.control.dt_util.now",
+            return_value=datetime(2026, 11, 19, 10, 16, tzinfo=timezone.utc),
+        ):
+            await ctl.tick(None)
+        ctl.hass.services.async_call.assert_not_awaited()
+
     async def test_secrets_never_returned_in_state(self):
         ctl = self.controller({"nas_password": "private-test-password"})
         self.assertNotIn("private-test-password", str(ctl.state()))
