@@ -10,6 +10,7 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest discover -s tests -p test_verified_nas.py -v
       - run: python -m unittest discover -s tests -p test_control_policy.py -v
+      - run: python -m unittest discover -s tests -p test_control_request.py -v
       - run: python -m compileall -q custom_components/auto_backup
       - uses: actions/setup-node@v4
         with:

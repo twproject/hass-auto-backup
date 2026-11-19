@@ -215,6 +215,35 @@ class BackupHandler(HandlerBase):
     async def get_addons(self):
         raise NotImplementedError("This should be unreachable")
 
+    async def get_backups(self):
+        backups, errors = await self._manager.async_get_backups()
+        if any(agent in errors for agent in self._manager.local_backup_agents) or (
+            errors and not backups
+        ):
+            raise HassioAPIError("Backup inventory is unavailable")
+        result = []
+        for slug, item in backups.items():
+            local = next(
+                (
+                    status
+                    for agent, status in item.agents.items()
+                    if agent in self._manager.local_backup_agents
+                ),
+                None,
+            )
+            if local is None:
+                continue
+            result.append(
+                {
+                    "slug": slug,
+                    "name": item.name,
+                    "date": item.date,
+                    "size": local.size,
+                    "protected": local.protected,
+                }
+            )
+        return result
+
     # noinspection PyProtectedMember
     async def create_backup(
         self, config: Dict, partial: bool = False, timeout: Optional[int] = None

@@ -1,3 +1,5 @@
+> **Complete GUI preview (1.12):** all Auto Backup services and creation options, independent one-off runs, standard storage without NAS, expiry cleanup and legacy import. See [service coverage and capabilities](docs/complete-control-panel.md). This preview is tested separately from production.
+
 > **Control panel (1.11.0):** configure schedules, content, NAS retention, integrity checks and notifications from an admin-only Home Assistant sidebar panel. No generated automation YAML. Internal scheduling is off by default. See [Control panel](docs/control-panel.md).
 
 > **Verified NAS fork:** optional SMB copy with full SHA-256 read-back, independent verification receipts and calendar retention. See [Verified NAS setup and recovery](docs/verified-nas.md). Based on jcwillox/hass-auto-backup; original attribution and MIT licence retained.

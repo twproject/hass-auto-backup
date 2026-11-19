@@ -13,6 +13,14 @@ from homeassistant.util import dt as dt_util
 
 from .control_policy import validate_policy, due_slots, next_slots
 from .nas_manager import EVENT_NAS_UPDATED
+from .control_request import (
+    policy_request,
+    manager_payload,
+    validate_request,
+    check_capabilities,
+    check_directories,
+)
+from . import nas_backend
 
 
 class BackupControl:
@@ -27,7 +35,10 @@ class BackupControl:
 
     @property
     def policy(self):
-        return validate_policy(self.entry.options.get("policy", {}))
+        value = dict(self.entry.options.get("policy", {}))
+        if not getattr(self.manager, "_supervised", True):
+            value.setdefault("exclude_folders", [])
+        return validate_policy(value)
 
     @property
     def busy(self):
@@ -120,6 +131,41 @@ class BackupControl:
                 blocking=True,
             )
 
+    def effective_schedule(self):
+        policy = dict(self.policy)
+        if not self.manager._nas.enabled:
+            policy["verify_enabled"] = False
+        return policy
+
+    async def purge_preview(self):
+        if self.manager._nas.enabled:
+            result = await self.hass.async_add_executor_job(
+                nas_backend.scan,
+                dict(self.manager._nas.config),
+                self.manager._nas.namespace,
+                dt_util.now(),
+            )
+            remote = result.get("plan", {}).get("delete", [])
+            receipts = sorted(
+                (
+                    r
+                    for r in self.manager._nas.receipts.values()
+                    if r.get("slug") and not r.get("local_removed")
+                ),
+                key=lambda r: r.get("created_at", ""),
+                reverse=True,
+            )
+            local = [
+                r["slug"] for r in receipts[self.manager._nas.config["keep_local"] :]
+            ]
+        else:
+            remote, local = [], sorted(self.manager.get_purgeable_snapshots())
+        result = {"nas": remote, "local": local}
+        result["confirmation"] = hashlib.sha256(
+            (self.revision + json.dumps(result, sort_keys=True)).encode()
+        ).hexdigest()
+        return result
+
     async def tick(self, _):
         if self.stopping or not self.policy["enabled"]:
             return
@@ -141,7 +187,7 @@ class BackupControl:
                     "Backup operation has exceeded the configured duration. It has not been cancelled.",
                 )
             return
-        due = due_slots(self.policy, now, self.claims)
+        due = due_slots(self.effective_schedule(), now, self.claims)
         if due:
             kind, key, _ = due[0]
             self.claims[key] = now.isoformat()
@@ -149,7 +195,9 @@ class BackupControl:
             await self.save()
             self.launch(kind, "schedule", key)
             return
-        health = self.manager.nas_status.get("status")
+        health = (
+            self.manager.nas_status.get("status") if self.manager._nas.enabled else "ok"
+        )
         problems = {
             "error",
             "unknown",
@@ -174,7 +222,18 @@ class BackupControl:
                     )
         elif self.alerts.pop("nas_problem_since", None) is not None:
             await self.save()
-        last = self.manager.nas_status.get("last_verified")
+        last = (
+            self.manager.nas_status.get("last_verified")
+            if self.manager._nas.enabled
+            else next(
+                (
+                    h.get("ended_at")
+                    for h in reversed(self.history)
+                    if h["kind"] == "backup" and h["status"] == "success"
+                ),
+                None,
+            )
+        )
         stamp = dt_util.parse_datetime(last) if last else None
         if self.policy["notify_errors"] and (
             stamp is None
@@ -182,7 +241,7 @@ class BackupControl:
         ):
             await self.alert_once(
                 "missing:" + now.date().isoformat(),
-                "No recent verified NAS backup. Check Auto Backup.",
+                "No recent successful backup. Check Auto Backup.",
             )
 
     async def alert_once(self, key, message):
@@ -193,18 +252,37 @@ class BackupControl:
         await self.save()
         await self.notify(message)
 
-    def launch(self, kind, actor, slot=None):
+    def launch(self, kind, actor, slot=None, request=None, confirmation=None):
         if self.stopping or self.busy or (self.task and not self.task.done()):
             raise HomeAssistantError("Another backup operation is already running")
-        if kind not in ("backup", "verify", "check", "report"):
+        if kind not in ("backup", "verify", "check", "report", "purge", "adopt"):
             raise HomeAssistantError("Unknown operation")
-        if not self.manager._nas.enabled:
+        if kind in ("verify", "check", "adopt") and not self.manager._nas.enabled:
             raise HomeAssistantError(
                 "Configure and enable a verified NAS destination first"
             )
-        self.task = self.hass.async_create_task(self.run(kind, actor, slot))
+        if kind == "adopt" and (
+            self.policy["enabled"] or not self.manager._nas.config.get("manage_legacy")
+        ):
+            raise ValueError("Disable the schedule before legacy adoption")
+        if kind in ("purge", "adopt") and not confirmation:
+            raise ValueError("Review and confirm the operation first")
+        if kind == "backup":
+            request = (
+                validate_request(request)
+                if request
+                else policy_request(self.policy, self.entry.options, dt_util.now())
+            )
+            check_capabilities(
+                request,
+                self.manager._nas.enabled,
+                getattr(self.manager, "_supervised", True),
+            )
+        self.task = self.hass.async_create_task(
+            self.run(kind, actor, slot, request=request, confirmation=confirmation)
+        )
 
-    async def run(self, kind, actor, slot=None):
+    async def run(self, kind, actor, slot=None, request=None, confirmation=None):
         async with self.operation_lock:
             item = {
                 "id": uuid4().hex,
@@ -220,39 +298,52 @@ class BackupControl:
             self.changed()
             try:
                 if kind == "backup":
-                    policy = self.policy
+                    request = request or policy_request(
+                        self.policy, self.entry.options, dt_util.now()
+                    )
+                    check_capabilities(
+                        request,
+                        self.manager._nas.enabled,
+                        getattr(self.manager, "_supervised", True),
+                    )
+                    await self.hass.async_add_executor_job(check_directories, request)
+                    item["service"] = request["service"]
                     result = await self.manager.async_create_backup(
-                        {
-                            "name": policy["name"]
-                            + dt_util.now().strftime(" %Y-%m-%d %H:%M"),
-                            "exclude": {
-                                "folders": policy["exclude_folders"],
-                                "addons": policy["exclude_addons"],
-                            },
-                            "encrypted": policy["encrypted"],
-                            "exclude_database": policy["exclude_database"],
-                        }
+                        manager_payload(request)
                     )
                     if not result:
                         raise HomeAssistantError(
                             "Backup creation or NAS verification failed"
                         )
-                elif kind == "verify":
-                    await self.manager._nas.verify(False)
+                elif kind in ("verify", "adopt"):
+                    if kind == "adopt" and confirmation != self.revision:
+                        raise ValueError("Settings changed; review the operation again")
+                    await self.manager._nas.verify(kind == "adopt")
                     await self.manager._nas.check()
                 elif kind == "check":
                     await self.manager._nas.check()
-                else:
+                elif kind == "purge":
+                    async with self.manager._backup_lock:
+                        preview = await self.purge_preview()
+                        if confirmation != preview["confirmation"]:
+                            raise ValueError(
+                                "Backup inventory changed; review the operation again"
+                            )
+                        await self.manager.purge_backups()
+                elif self.manager._nas.enabled:
                     await self.manager._nas.check()
                     status = self.manager.nas_status
                     await self.notify(
                         f"Backup summary\nStatus: {status.get('status')}\nLast backup: {status.get('last_backup', 'none')}\nCopies: {status.get('copies', 0)}\nDaily / Sunday / monthly: {status.get('daily', 0)} / {status.get('weekly', 0)} / {status.get('monthly', 0)}\nMissing checksums: {status.get('missing_checksums', 0)}"
                     )
+                else:
+                    backups = await self.manager._handler.get_backups()
+                    await self.notify(
+                        f"Backup summary\nLocal backups: {len(backups)}\nMonitored: {self.manager.monitored}\nExpired: {self.manager.purgeable}"
+                    )
                 item["status"] = "success"
                 if kind == "backup" and self.policy["notify_success"]:
-                    await self.notify(
-                        "Home Assistant backup copied to NAS and verified with SHA-256."
-                    )
+                    await self.notify("Home Assistant backup completed.")
             except Exception as error:
                 item.update(status="error", error=type(error).__name__)
                 if self.policy["notify_errors"]:
@@ -271,6 +362,8 @@ class BackupControl:
     def state(self):
         options = dict(self.entry.options)
         options.pop("nas_password", None)
+        options.pop("backup_password", None)
+        options["backup_password_set"] = bool(self.entry.options.get("backup_password"))
         options["nas_password_set"] = bool(self.entry.options.get("nas_password"))
         catalog = getattr(self.manager._nas, "catalog", None)
         inventory = {row["name"]: row for row in catalog or []}
@@ -301,7 +394,19 @@ class BackupControl:
             "options": options,
             "policy": self.policy,
             "timezone": self.hass.config.time_zone,
-            "next": next_slots(self.policy, dt_util.now(), self.claims),
+            "next": next_slots(self.effective_schedule(), dt_util.now(), self.claims),
+            "capabilities": {
+                "supervised": getattr(self.manager, "_supervised", True),
+                "nas_enabled": self.manager._nas.enabled,
+            },
+            "local_success": next(
+                (
+                    h
+                    for h in reversed(self.history)
+                    if h["kind"] == "backup" and h["status"] == "success"
+                ),
+                None,
+            ),
             "busy": self.busy or bool(self.task and not self.task.done()),
             "nas": self.manager.nas_status,
             "history": list(reversed(self.history)),

@@ -19,6 +19,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             bus=SimpleNamespace(async_fire=lambda *a: None),
             services=SimpleNamespace(async_call=AsyncMock()),
             async_create_task=asyncio.create_task,
+            async_add_executor_job=AsyncMock(side_effect=lambda fn, *args: fn(*args)),
         )
         manager = SimpleNamespace(
             _backup_lock=asyncio.Lock(),
@@ -31,6 +32,11 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             ),
             nas_status={},
             async_create_backup=AsyncMock(return_value=True),
+            purge_backups=AsyncMock(),
+            get_purgeable_snapshots=lambda: [],
+            _handler=SimpleNamespace(get_backups=AsyncMock(return_value=[])),
+            monitored=0,
+            purgeable=0,
         )
         with patch("custom_components.auto_backup.control.Store"):
             ctl = BackupControl(hass, SimpleNamespace(options=options or {}), manager)
@@ -128,6 +134,139 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         ):
             await ctl.tick(None)
         ctl.hass.services.async_call.assert_not_awaited()
+
+    async def test_backup_without_nas_and_partial_payload(self):
+        ctl = self.controller()
+        ctl.manager._nas.enabled = False
+        ctl.launch(
+            "backup",
+            "test",
+            request={
+                "service": "backup_partial",
+                "data": {
+                    "folders": ["media"],
+                    "addons": [],
+                    "compressed": False,
+                    "keep_days": 0.5,
+                },
+            },
+        )
+        await ctl.task
+        data = ctl.manager.async_create_backup.call_args.args[0]
+        self.assertEqual(data["include"], {"folders": ["media"], "addons": []})
+        self.assertEqual(data["keep_days"], 0.5)
+        self.assertFalse(data["compressed"])
+        self.assertEqual(ctl.history[-1]["status"], "success")
+
+    async def test_custom_password_not_returned_or_written_to_history(self):
+        ctl = self.controller({"backup_password": "secret-value"})
+        ctl.launch(
+            "backup",
+            "test",
+            request={"service": "backup_full", "data": {"password": "one-shot-secret"}},
+        )
+        await ctl.task
+        self.assertNotIn("secret-value", str(ctl.state()))
+        self.assertNotIn("one-shot-secret", str(ctl.history))
+
+    async def test_custom_password_clear_is_explicit_and_blank_preserves(self):
+        current = {"backup_password": "saved"}
+        self.assertEqual(
+            validate_options(current, {"backup_password": ""})["backup_password"],
+            "saved",
+        )
+        self.assertNotIn(
+            "backup_password",
+            validate_options(current, {"clear_backup_password": True}),
+        )
+
+    async def test_native_cleanup_checks_preview_again_before_deletion(self):
+        ctl = self.controller()
+        ctl.manager._nas.enabled = False
+        ctl.manager.get_purgeable_snapshots = lambda: ["expired1"]
+        preview = await ctl.purge_preview()
+        ctl.manager.get_purgeable_snapshots = lambda: ["expired1", "expired2"]
+        ctl.launch("purge", "test", confirmation=preview["confirmation"])
+        await ctl.task
+        ctl.manager.purge_backups.assert_not_awaited()
+        self.assertEqual(ctl.history[-1]["status"], "error")
+
+    async def test_native_cleanup_requires_confirmation_and_uses_manager(self):
+        ctl = self.controller()
+        ctl.manager._nas.enabled = False
+        with self.assertRaises(ValueError):
+            ctl.launch("purge", "test")
+        preview = await ctl.purge_preview()
+        ctl.launch("purge", "test", confirmation=preview["confirmation"])
+        await ctl.task
+        ctl.manager.purge_backups.assert_awaited_once()
+
+    async def test_standard_mode_skips_only_nas_verification_slot(self):
+        ctl = self.controller({"policy": {"enabled": True}})
+        ctl.manager._nas.enabled = False
+        self.assertFalse(ctl.effective_schedule()["verify_enabled"])
+        self.assertTrue(ctl.effective_schedule()["report_enabled"])
+        ctl.launch("report", "test")
+        await ctl.task
+        ctl.manager._nas.check.assert_not_awaited()
+        self.assertEqual(ctl.history[-1]["status"], "success")
+
+    async def test_gui_request_fields_cover_every_original_creation_schema(self):
+        import voluptuous as vol
+        from custom_components.auto_backup import MAP_SERVICES
+        from custom_components.auto_backup.control_request import SERVICE_FIELDS
+
+        def keys(schema):
+            if isinstance(schema, vol.Schema):
+                return {getattr(k, "schema", k) for k in schema.schema}
+            return set().union(*(keys(v) for v in schema.validators))
+
+        for service, fields in SERVICE_FIELDS.items():
+            self.assertEqual(fields, keys(MAP_SERVICES[service]), service)
+
+    async def test_core_inventory_uses_local_agent_metadata(self):
+        from custom_components.auto_backup.handlers import BackupHandler
+
+        item = SimpleNamespace(
+            name="Backup",
+            date="2026-11-19T10:00:00Z",
+            agents={"local": SimpleNamespace(size=123, protected=True)},
+        )
+        remote = SimpleNamespace(
+            name="Remote only",
+            date="2026-11-19",
+            agents={"remote": SimpleNamespace(size=999, protected=False)},
+        )
+        native = SimpleNamespace(
+            async_get_backups=AsyncMock(return_value=({"a": item, "b": remote}, {})),
+            local_backup_agents={"local": object()},
+        )
+        handler = BackupHandler(None, native)
+        rows = await handler.get_backups()
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "slug": "a",
+                    "name": "Backup",
+                    "date": "2026-11-19T10:00:00Z",
+                    "size": 123,
+                    "protected": True,
+                }
+            ],
+        )
+
+    async def test_core_local_agent_failure_is_not_an_empty_inventory(self):
+        from custom_components.auto_backup.handlers import BackupHandler, HassioAPIError
+
+        native = SimpleNamespace(
+            async_get_backups=AsyncMock(
+                return_value=({"remote": object()}, {"local": RuntimeError()})
+            ),
+            local_backup_agents={"local": object()},
+        )
+        with self.assertRaises(HassioAPIError):
+            await BackupHandler(None, native).get_backups()
 
     async def test_secrets_never_returned_in_state(self):
         ctl = self.controller({"nas_password": "private-test-password"})

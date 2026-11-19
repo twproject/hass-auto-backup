@@ -21,3 +21,5 @@ class ElementStub {
 vm.runInNewContext(panelSource.replace(/^import .*;\r?\n/,''),{HTMLElement:ElementStub,languageOf,translate,esc:escapeHtml,customElements:{get:()=>undefined,define:(name,type)=>{Panel=type;}}});
 assert.doesNotThrow(()=>new Panel(),'The panel must be constructible before HA connects it');
 console.log('Custom-element construction passed without modifying host attributes.');
+
+const instance=new Panel();instance.data={busy:false,capabilities:{nas_enabled:false},nas:{status:'disabled'}};assert.equal(instance.displayStatus(),'standardBackup');instance.data.busy=true;assert.equal(instance.displayStatus(),'running');instance.data.busy=false;instance.data.capabilities.nas_enabled=true;instance.data.nas.status='ok';assert.equal(instance.displayStatus(),'ok');console.log('Standard/NAS header status follows the active mode.');

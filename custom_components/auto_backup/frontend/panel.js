@@ -1,1 +1,1 @@
-import "./panel-v2.js?v=1.11.0";
+import "./panel-v2.js?v=1.12.0-beta.4";

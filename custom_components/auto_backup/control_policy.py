@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import re
+from .control_request import selection, SERVICE_FIELDS, validate_request
 
 DEFAULT_POLICY = {
     "enabled": False,
@@ -13,6 +14,16 @@ DEFAULT_POLICY = {
     "exclude_addons": [],
     "exclude_database": False,
     "encrypted": False,
+    "backup_service": "backup_full",
+    "append_timestamp": True,
+    "include_enabled": False,
+    "include_folders": ["homeassistant"],
+    "include_addons": [],
+    "compressed": True,
+    "encryption": "none",
+    "keep_days": None,
+    "location": "",
+    "download_path": [],
     "verify_enabled": True,
     "verify_day": 6,
     "verify_time": "03:00",
@@ -32,7 +43,32 @@ def validate_policy(value):
     if not isinstance(value, dict) or set(value) - set(DEFAULT_POLICY):
         raise ValueError("Unsupported policy field")
     policy = {**deepcopy(DEFAULT_POLICY), **value}
+    if "encryption" not in value and value.get("encrypted"):
+        policy["encryption"] = "default"
+    if (
+        policy["encryption"] not in ("none", "default", "password")
+        or not isinstance(policy["backup_service"], str)
+        or policy["backup_service"] not in SERVICE_FIELDS
+    ):
+        raise ValueError("Invalid backup mode")
+    policy["encrypted"] = policy["encryption"] == "default"
+    for key in ("include_folders", "include_addons"):
+        policy[key] = selection(policy[key], key == "include_folders")
+    validate_request(
+        {
+            "service": "backup_full",
+            "data": {k: policy[k] for k in ("location", "download_path", "compressed")}
+            | (
+                {"keep_days": policy["keep_days"]}
+                if policy["keep_days"] is not None
+                else {}
+            ),
+        }
+    )
     for key in (
+        "append_timestamp",
+        "include_enabled",
+        "compressed",
         "enabled",
         "exclude_database",
         "encrypted",
@@ -68,7 +104,7 @@ def validate_policy(value):
     policy["backup_days"] = sorted(set(days))
     if (
         not isinstance(policy["name"], str)
-        or not 1 <= len(policy["name"].strip()) <= 80
+        or not 0 <= len(policy["name"].strip()) <= 80
         or any(c in policy["name"] for c in "\r\n")
     ):
         raise ValueError("Backup name must contain 1–80 characters")
@@ -81,20 +117,8 @@ def validate_policy(value):
             or any(not isinstance(v, str) for v in values)
         ):
             raise ValueError("Invalid selection: " + key)
-        if key == "exclude_folders" and set(values) - {
-            "homeassistant",
-            "ssl",
-            "share",
-            "media",
-            "addons/local",
-        }:
-            raise ValueError("Unknown backup folder")
-        if key == "exclude_folders" and "homeassistant" in values:
-            raise ValueError("Home Assistant configuration must be included")
-        if key == "exclude_addons" and any(
-            not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", v) for v in values
-        ):
-            raise ValueError("Invalid app identifier")
+        if key in ("exclude_folders", "exclude_addons"):
+            values = selection(values, key == "exclude_folders")
         if key == "notify_entities" and any(
             not re.fullmatch(r"notify\.[a-z0-9_]+", v) for v in values
         ):

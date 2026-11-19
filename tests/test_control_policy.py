@@ -105,9 +105,7 @@ class PolicyTests(unittest.TestCase):
             {"verify_time": "3:00"},
             {"catchup_hours": 24},
             {"notify_entities": ["script.unsafe"]},
-            {"exclude_folders": ["homeassistant"]},
             {"exclude_addons": ["../all"]},
-            {"name": ""},
             {"unknown": 1},
         ):
             with self.subTest(value=value), self.assertRaises(ValueError):
