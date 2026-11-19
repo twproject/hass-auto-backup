@@ -1,6 +1,6 @@
-# Complete service coverage (1.12 preview)
+# Complete service coverage (1.12)
 
-The interface covers every public Auto Backup service and creation parameter. It remains admin-only, follows the HA theme and account language (English/Italian), and stores private installation details in HA integration options. Production 1.11 settings are backward compatible; the preview is deployed to TEST only.
+The interface covers every public Auto Backup service and creation parameter. It remains admin-only, follows the HA theme and account language (English/Italian), and stores private installation details in HA integration options. Existing 1.11 settings are backward compatible. Validate each rollout in a separate test installation before upgrading production.
 
 | Original service | GUI |
 |---|---|
