@@ -139,9 +139,9 @@ async def command(hass, connection, msg):
         ):
             raise ValueError("Wait for the running operation before changing settings")
         if action in ("save", "test_connection"):
-            options = validate_options(
-                dict(control.entry.options), msg.get("options", {})
-            )
+            current = dict(control.entry.options)
+            current.setdefault("policy", control.policy)
+            options = validate_options(current, msg.get("options", {}))
             if options.get("nas_enabled") and not is_hassio(hass):
                 raise ValueError("NAS mode requires Supervisor")
             if action == "test_connection":
@@ -314,7 +314,7 @@ async def setup_panel(hass):
         webcomponent_name="auto-backup-panel",
         sidebar_title="Auto Backup",
         sidebar_icon="mdi:backup-restore",
-        module_url="/auto_backup_static/panel.js?v=1.12.0-beta.4",
+        module_url="/auto_backup_static/panel.js?v=1.12.0-beta.5",
         require_admin=True,
         config_panel_domain=DOMAIN,
     )
